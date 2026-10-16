@@ -32,10 +32,11 @@ parsec plugin install https://github.com/abidibo/parsec-ask
 
 ## Configuration
 
-`~/.local/share/parsec/plugins/ask/plugin.toml`:
+Click the edit button next to Ask in Parsec's Settings › Plugins, or create
+`~/.config/parsec/plugins/ask.toml` yourself (Parsec 1.5.0 or later). Your
+values survive plugin updates, and Parsec restarts the plugin when you save.
 
 ```toml
-[config]
 model = "sonnet"    # Claude Code model: sonnet, haiku, opus, or a full model name
 command = []        # another CLI instead of Claude Code
 ```
