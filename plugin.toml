@@ -1,0 +1,14 @@
+name = "Ask"
+id = "ask"
+version = "0.1.0"
+description = "Ask Claude, or fix the text you copied: ask … · fix · fix more formal"
+author = "abidibo"
+homepage = "https://github.com/abidibo/parsec-ask"
+keywords = ["ask", "fix"]
+exec = "main.py"
+icon = "dialog-question-symbolic"
+clipboard = true    # `fix` works on the copied text
+
+[config]
+model = "sonnet"    # Claude Code model: sonnet, haiku, opus, or a full model name
+command = []        # another CLI instead of Claude Code, e.g. ["codex", "exec", "--skip-git-repo-check"]
