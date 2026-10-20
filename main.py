@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Parsec plugin: ask Claude, or fix the text you copied.
 
-  ask how do I undo a pushed commit    a short answer; Enter copies it
+  ask how do I undo a pushed commit    a short answer in the preview pane;
+                                       Enter copies it
   fix                                  fix spelling and grammar of the clipboard
   fix more formal                      apply an instruction to the clipboard
   fix in English                       ...or translate it
@@ -17,8 +18,10 @@ is written, `progress` lines show it growing. If the user closes the level,
 Parsec kills this process; the model's process gets SIGTERM with it.
 """
 import ctypes
+import hashlib
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -34,9 +37,9 @@ PREVIEW = 70
 
 ASK_SYSTEM = """You answer quick questions typed into a desktop launcher on \
 Linux. Lead with the answer and keep it short: a few lines unless the \
-question needs more. No preamble, no headings, no Markdown emphasis. Put \
-commands and code on lines of their own, unindented, so they can be copied. \
-Answer in the language of the question."""
+question needs more. No preamble, no headings, no tables. The answer is \
+shown as Markdown: put commands and code in fenced code blocks, use lists \
+for steps, and bold sparingly. Answer in the language of the question."""
 
 FIX_SYSTEM = """You rewrite text the user copied. Apply the instruction to \
 the text inside <text> and reply with the rewritten text only: no quotes \
@@ -55,6 +58,39 @@ class BackendError(Exception):
 def short(text, limit=PREVIEW):
     line = " ".join(text.split())
     return line if len(line) <= limit else line[: limit - 1] + "…"
+
+
+FENCE = re.compile(r"^\s*(```|~~~)")
+INLINE = [
+    (re.compile(r"\[([^\]\n]+)\]\(([^)\s]+)\)"),
+     lambda m: m[2] if m[1] == m[2] else f"{m[1]} ({m[2]})"),
+    (re.compile(r"`([^`\n]+)`"), r"\1"),
+    (re.compile(r"(\*\*|__)(?=\S)(.+?)(?<=\S)\1"), r"\2"),
+    (re.compile(r"~~(?=\S)(.+?)(?<=\S)~~"), r"\1"),
+    (re.compile(r"(?<![\w*])\*(?=[^\s*])([^*\n]+?)(?<=\S)\*(?![\w*])"), r"\1"),
+    (re.compile(r"(?<!\w)_(?=[^\s_])([^_\n]+?)(?<=\S)_(?!\w)"), r"\1"),
+]
+
+
+def plain(md):
+    """The answer without its Markdown marks, for copying and pasting:
+    code blocks lose their fences, emphasis and inline code their marks,
+    links become `text (url)`. Lists stay as they are."""
+    out, code = [], False
+    for line in md.splitlines():
+        if FENCE.match(line):
+            code = not code
+            continue
+        if not code:
+            line = re.sub(r"^#{1,6}\s+|^>\s?", "", line)
+            for pattern, repl in INLINE:
+                line = pattern.sub(repl, line)
+        out.append(line)
+    return "\n".join(out).strip()
+
+
+def markdown(text):
+    return {"text": text, "markdown": True}
 
 
 def fix_prompt(instruction, source):
@@ -246,24 +282,35 @@ class Ask:
             now = time.monotonic()
             if now - last[0] >= PROGRESS_EVERY and text.strip():
                 last[0] = now
-                self.send({"type": "progress", "items": [
-                    {"id": "answer", "title": f"{title} · writing…", "text": text.strip(),
-                     "actions": []}]})
+                text = text.strip()
+                item = {"title": f"{title} · writing…", "actions": []}
+                if mode == "ask":
+                    # Parsec caches a preview by row id: a new one per update.
+                    item.update(id=f"writing-{len(text)}", subtitle=short(plain(text)),
+                                preview=markdown(text))
+                else:
+                    item.update(id="answer", text=text)
+                self.send({"type": "progress", "items": [item]})
 
         try:
             answer = self.answer(system, prompt, on_text)
         except BackendError as e:
             return [{"id": "error", "title": f"{self.backend_name()} didn't answer",
                      "text": str(e), "icon": "dialog-warning-symbolic", "actions": []}]
-        copy = {"label": "Copy", "copy": answer}
-        paste = {"label": "Paste", "paste": answer}
+        if mode == "fix":
+            # A fix replaces your selection, so Enter pastes it.
+            return [{"id": "answer", "title": title, "text": answer, "actions": [
+                {"label": "Paste", "paste": answer}, {"label": "Copy", "copy": answer}]}]
+        # An answer could hold a command, so it's copied rather than typed
+        # into a terminal; it is read rendered, and copied without the marks.
+        text = plain(answer)
+        digest = hashlib.sha1(answer.encode()).hexdigest()[:12]
         return [{
-            "id": "answer",
+            "id": f"answer-{digest}",
             "title": title,
-            "text": answer,
-            # A fix replaces your selection; an answer could hold a command,
-            # so it's copied rather than typed into a terminal.
-            "actions": [paste, copy] if mode == "fix" else [copy, paste],
+            "subtitle": short(text),
+            "preview": markdown(answer),
+            "actions": [{"label": "Copy", "copy": text}, {"label": "Paste", "paste": text}],
         }]
 
     def answer(self, system, prompt, on_text):

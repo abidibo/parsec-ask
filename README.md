@@ -5,7 +5,7 @@ question, or fix the text you just copied, without leaving what you're doing.
 
 | Type | What happens |
 |---|---|
-| `ask how do I undo a pushed commit` | Enter asks Claude; the answer appears as it's written. Enter copies it, Tab pastes it. |
+| `ask how do I undo a pushed commit` | Enter asks Claude; the answer appears in the preview pane as it's written, with code blocks and lists rendered. Enter copies it, Tab pastes it, without the Markdown marks. |
 | `fix` | Fixes spelling, grammar and punctuation of the copied text. Enter pastes the result over your selection, Tab copies it. |
 | `fix more formal` | Applies your instruction to the copied text instead. |
 | `fix in English` | ...including translating it. |
@@ -20,7 +20,8 @@ Esc or closing the launcher stops it.
 
 ## Requirements
 
-- Parsec 1.4.0 or later (slow answers and clipboard access for plugins)
+- Parsec 1.8.0 or later (the preview pane); 1.10.0 or later shows answers
+  rendered as Markdown instead of as plain text
 - Claude Code, logged in: run `claude` once in a terminal
 - Python 3.8+
 

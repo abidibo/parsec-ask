@@ -1,6 +1,6 @@
 name = "Ask"
 id = "ask"
-version = "0.1.0"
+version = "0.2.0"
 description = "Ask Claude, or fix the text you copied: ask … · fix · fix more formal"
 author = "abidibo"
 homepage = "https://github.com/abidibo/parsec-ask"

@@ -90,10 +90,13 @@ class Query(Fake):
 class Browse(Fake):
     def test_ask_streams_then_answers_with_copy_first(self):
         [item] = self.plugin.browse({"mode": "ask", "question": "hi?"})
-        self.assertEqual(item["text"], "Hello world")
+        self.assertEqual(item["preview"], {"text": "Hello world", "markdown": True})
+        self.assertEqual(item["subtitle"], "Hello world")
         self.assertEqual([a["label"] for a in item["actions"]], ["Copy", "Paste"])
-        texts = [m["items"][0]["text"] for m in self.progress()]
-        self.assertEqual(texts, ["Hello", "Hello world"])
+        updates = [m["items"][0] for m in self.progress()]
+        self.assertEqual([u["preview"]["text"] for u in updates], ["Hello", "Hello world"])
+        ids = {u["id"] for u in updates} | {item["id"]}
+        self.assertEqual(len(ids), 3, "each update is a new row to Parsec's preview cache")
         call = self.called()
         self.assertEqual(call["prompt"], "hi?")
         self.assertIn("--no-session-persistence", call["argv"])
@@ -105,6 +108,8 @@ class Browse(Fake):
         [item] = self.plugin.browse({"mode": "fix", "instruction": "shorter", "source": "long text"})
         self.assertEqual([a["label"] for a in item["actions"]], ["Paste", "Copy"])
         self.assertEqual(item["actions"][0]["paste"], "Hello world")
+        self.assertEqual(item["text"], "Hello world")
+        self.assertNotIn("preview", item)
         prompt = self.called()["prompt"]
         self.assertIn("Instruction: shorter", prompt)
         self.assertIn("<text>\nlong text\n</text>", prompt)
@@ -123,12 +128,35 @@ class Browse(Fake):
     def test_any_command_streams_its_stdout(self):
         self.plugin.init({"command": ["sh", "-c", "tr a-z A-Z"]})
         [item] = self.plugin.browse({"mode": "ask", "question": "hi"})
-        self.assertTrue(item["text"].endswith("HI"))
-        self.assertTrue(item["text"].startswith("YOU ANSWER"), "system prompt goes first")
+        answer = item["preview"]["text"]
+        self.assertTrue(answer.endswith("HI"))
+        self.assertTrue(answer.startswith("YOU ANSWER"), "system prompt goes first")
 
     def test_junk_data_is_ignored(self):
         self.assertEqual(self.plugin.browse({"mode": "ask"}), [])
         self.assertEqual(self.plugin.browse("nope"), [])
+
+
+class Plain(unittest.TestCase):
+    def test_code_blocks_lose_their_fences(self):
+        md = "Run:\n\n```sh\ngit revert **HEAD**\n```\n\nThen push."
+        self.assertEqual(main.plain(md), "Run:\n\ngit revert **HEAD**\n\nThen push.")
+
+    def test_inline_marks_go(self):
+        md = "Use **`git revert`**, *not* __reset__ or ~~force~~. See [docs](https://git-scm.com)."
+        self.assertEqual(main.plain(md),
+                         "Use git revert, not reset or force. See docs (https://git-scm.com).")
+
+    def test_lists_identifiers_and_maths_stay(self):
+        md = "- one\n* two\n1. my_var_name\n2. 2 * 3 * 4"
+        self.assertEqual(main.plain(md), md)
+
+    def test_headings_and_quotes(self):
+        self.assertEqual(main.plain("## Steps\n> careful"), "Steps\ncareful")
+
+    def test_bare_links_keep_one_url(self):
+        url = "https://example.com/a"
+        self.assertEqual(main.plain(f"[{url}]({url})"), url)
 
 
 class Stream(unittest.TestCase):
